@@ -3,11 +3,11 @@
 use secrecy::SecretString;
 use std::io::Read;
 
-use super::{v1_payload_key, Callbacks, NoCallbacks};
+use super::v1_payload_key;
 use crate::{
     error::Error,
     format::{Header, RecipientStanza},
-    keys::{FileKey, Identity},
+    keys::FileKey,
     primitives::stream::{Stream, StreamReader},
 };
 
@@ -37,84 +37,6 @@ impl<R> BaseDecryptor<R> {
                 .and_then(|file_key| v1_payload_key(header, file_key, self.nonce)),
             Header::Unknown(_) => unreachable!(),
         }
-    }
-}
-
-/// Decryptor for an age file encrypted to a list of recipients.
-pub struct RecipientsDecryptor<R>(BaseDecryptor<R>);
-
-impl<R: Read> RecipientsDecryptor<R> {
-    pub(super) fn new(input: R, header: Header, nonce: [u8; 16]) -> Self {
-        RecipientsDecryptor(BaseDecryptor {
-            input,
-            header,
-            nonce,
-        })
-    }
-
-    /// Attempts to decrypt the age file.
-    ///
-    /// The decryptor will have no callbacks registered, so it will be unable to use
-    /// identities that require e.g. a passphrase to decrypt.
-    ///
-    /// If successful, returns a reader that will provide the plaintext.
-    pub fn decrypt(self, identities: &[Identity]) -> Result<StreamReader<R>, Error> {
-        self.decrypt_with_callbacks(identities, &NoCallbacks)
-    }
-
-    /// Attempts to decrypt the age file.
-    ///
-    /// If successful, returns a reader that will provide the plaintext.
-    pub fn decrypt_with_callbacks(
-        mut self,
-        identities: &[Identity],
-        callbacks: &dyn Callbacks,
-    ) -> Result<StreamReader<R>, Error> {
-        self.0
-            .obtain_payload_key(|r| {
-                identities
-                    .iter()
-                    .find_map(|key| key.unwrap_file_key(r, callbacks))
-            })
-            .map(|payload_key| Stream::decrypt(&payload_key, self.0.input))
-    }
-}
-
-#[cfg(feature = "async")]
-impl<R: AsyncRead + Unpin> RecipientsDecryptor<R> {
-    pub(super) fn new_async(input: R, header: Header, nonce: [u8; 16]) -> Self {
-        RecipientsDecryptor(BaseDecryptor {
-            input,
-            header,
-            nonce,
-        })
-    }
-
-    /// Attempts to decrypt the age file.
-    ///
-    /// The decryptor will have no callbacks registered, so it will be unable to use
-    /// identities that require e.g. a passphrase to decrypt.
-    ///
-    /// If successful, returns a reader that will provide the plaintext.
-    pub fn decrypt_async(self, identities: &[Identity]) -> Result<StreamReader<R>, Error> {
-        self.decrypt_async_with_callbacks(identities, &NoCallbacks)
-    }
-
-    /// Attempts to decrypt the age file.
-    ///
-    /// If successful, returns a reader that will provide the plaintext.
-    pub fn decrypt_async_with_callbacks(
-        mut self,
-        identities: &[Identity],
-        callbacks: &dyn Callbacks,
-    ) -> Result<StreamReader<R>, Error> {
-        self.0
-            .obtain_payload_key(|r| {
-                identities
-                    .iter()
-                    .find_map(|key| key.unwrap_file_key(r, callbacks))
-            })
-            .map(|payload_key| Stream::decrypt_async(&payload_key, self.0.input))
     }
 }
 

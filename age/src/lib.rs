@@ -101,19 +101,14 @@
 
 mod error;
 mod format;
-pub mod keys;
-mod openssh;
+mod keys;
 mod primitives;
 mod protocol;
 mod util;
 
 pub use error::Error;
-pub use keys::SecretKey;
 pub use primitives::{armor, stream};
-pub use protocol::{decryptor, Callbacks, Decryptor, Encryptor};
-
-#[cfg(feature = "cli-common")]
-pub mod cli_common;
+pub use protocol::{decryptor, Decryptor};
 
 /// Helper for fuzzing the Header parser and serializer.
 #[cfg(fuzzing)]

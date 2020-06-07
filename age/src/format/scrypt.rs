@@ -1,8 +1,4 @@
-use age_core::{
-    format::AgeStanza,
-    primitives::{aead_decrypt, aead_encrypt},
-};
-use rand::{rngs::OsRng, RngCore};
+use age_core::{format::AgeStanza, primitives::aead_decrypt};
 use secrecy::{ExposeSecret, Secret, SecretString};
 use std::convert::TryInto;
 use std::time::Duration;
@@ -76,30 +72,6 @@ impl RecipientStanza {
             log_n,
             encrypted_file_key: stanza.body[..].try_into().ok()?,
         })
-    }
-
-    pub(crate) fn wrap_file_key(file_key: &FileKey, passphrase: &SecretString) -> Self {
-        let mut salt = [0; SALT_LEN];
-        OsRng.fill_bytes(&mut salt);
-
-        let mut inner_salt = vec![];
-        inner_salt.extend_from_slice(SCRYPT_SALT_LABEL);
-        inner_salt.extend_from_slice(&salt);
-
-        let log_n = target_scrypt_work_factor();
-
-        let enc_key = scrypt(&inner_salt, log_n, passphrase.expose_secret()).expect("log_n < 64");
-        let encrypted_file_key = {
-            let mut key = [0; ENCRYPTED_FILE_KEY_BYTES];
-            key.copy_from_slice(&aead_encrypt(&enc_key, file_key.0.expose_secret()));
-            key
-        };
-
-        RecipientStanza {
-            salt,
-            log_n,
-            encrypted_file_key,
-        }
     }
 
     pub(crate) fn unwrap_file_key(

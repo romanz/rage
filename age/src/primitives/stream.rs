@@ -7,7 +7,7 @@ use chacha20poly1305::{
 use pin_project::pin_project;
 use secrecy::{ExposeSecret, SecretVec};
 use std::convert::TryInto;
-use std::io::{self, Read, Seek, SeekFrom, Write};
+use std::io::{self, Read, Seek, SeekFrom};
 
 #[cfg(feature = "async")]
 use futures::{
@@ -83,21 +83,6 @@ impl Stream {
         }
     }
 
-    /// Wraps `STREAM` encryption under the given `key` around a writer.
-    ///
-    /// `key` must **never** be repeated across multiple streams. In `age` this is
-    /// achieved by deriving the key with [`HKDF`] from both a random file key and a
-    /// random nonce.
-    ///
-    /// [`HKDF`]: age_core::primitives::hkdf
-    pub(crate) fn encrypt<W: Write>(key: &[u8; 32], inner: W) -> StreamWriter<W> {
-        StreamWriter {
-            stream: Self::new(key),
-            inner,
-            chunk: Vec::with_capacity(CHUNK_SIZE),
-        }
-    }
-
     /// Wraps `STREAM` decryption under the given `key` around a reader.
     ///
     /// `key` must **never** be repeated across multiple streams. In `age` this is
@@ -137,22 +122,6 @@ impl Stream {
         }
     }
 
-    fn encrypt_chunk(&mut self, chunk: &[u8], last: bool) -> io::Result<Vec<u8>> {
-        assert!(chunk.len() <= CHUNK_SIZE);
-
-        self.nonce.set_last(last).map_err(|_| {
-            io::Error::new(io::ErrorKind::WriteZero, "last chunk has been processed")
-        })?;
-
-        let encrypted = self
-            .aead
-            .encrypt(&self.nonce.to_bytes().into(), chunk)
-            .expect("we will never hit chacha20::MAX_BLOCKS because of the chunk size");
-        self.nonce.increment_counter();
-
-        Ok(encrypted)
-    }
-
     fn decrypt_chunk(&mut self, chunk: &[u8], last: bool) -> io::Result<SecretVec<u8>> {
         assert!(chunk.len() <= ENCRYPTED_CHUNK_SIZE);
 
@@ -175,60 +144,6 @@ impl Stream {
 
     fn is_complete(&self) -> bool {
         self.nonce.is_last()
-    }
-}
-
-/// Writes an encrypted age file.
-pub struct StreamWriter<W: Write> {
-    stream: Stream,
-    inner: W,
-    chunk: Vec<u8>,
-}
-
-impl<W: Write> StreamWriter<W> {
-    /// Writes the final chunk of the age file.
-    ///
-    /// You **MUST** call `finish` when you are done writing, in order to finish the
-    /// encryption process. Failing to call `finish` will result in a truncated file that
-    /// that will fail to decrypt.
-    pub fn finish(mut self) -> io::Result<W> {
-        let encrypted = self.stream.encrypt_chunk(&self.chunk, true)?;
-        self.inner.write_all(&encrypted)?;
-        Ok(self.inner)
-    }
-}
-
-impl<W: Write> Write for StreamWriter<W> {
-    fn write(&mut self, mut buf: &[u8]) -> io::Result<usize> {
-        let mut bytes_written = 0;
-
-        while !buf.is_empty() {
-            let mut to_write = CHUNK_SIZE - self.chunk.len();
-            if to_write > buf.len() {
-                to_write = buf.len()
-            }
-
-            self.chunk.extend_from_slice(&buf[..to_write]);
-            bytes_written += to_write;
-            buf = &buf[to_write..];
-
-            // At this point, either buf is empty, or we have a full chunk.
-            assert!(buf.is_empty() || self.chunk.len() == CHUNK_SIZE);
-
-            // Only encrypt the chunk if we have more data to write, as the last
-            // chunk must be written in finish().
-            if !buf.is_empty() {
-                let encrypted = self.stream.encrypt_chunk(&self.chunk, false)?;
-                self.inner.write_all(&encrypted)?;
-                self.chunk.clear();
-            }
-        }
-
-        Ok(bytes_written)
-    }
-
-    fn flush(&mut self) -> io::Result<()> {
-        self.inner.flush()
     }
 }
 
@@ -459,199 +374,5 @@ impl<R: Read + Seek> Seek for StreamReader<R> {
 
         // All done!
         Ok(target_pos)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use secrecy::ExposeSecret;
-    use std::io::{self, Cursor, Read, Seek, SeekFrom, Write};
-
-    use super::{Stream, CHUNK_SIZE};
-
-    #[test]
-    fn chunk_round_trip() {
-        let key = [7; 32];
-        let data = vec![42; CHUNK_SIZE];
-
-        let encrypted = {
-            let mut s = Stream::new(&key);
-            s.encrypt_chunk(&data, false).unwrap()
-        };
-
-        let decrypted = {
-            let mut s = Stream::new(&key);
-            s.decrypt_chunk(&encrypted, false).unwrap()
-        };
-
-        assert_eq!(decrypted.expose_secret(), &data);
-    }
-
-    #[test]
-    fn last_chunk_round_trip() {
-        let key = [7; 32];
-        let data = vec![42; CHUNK_SIZE];
-
-        let encrypted = {
-            let mut s = Stream::new(&key);
-            let res = s.encrypt_chunk(&data, true).unwrap();
-
-            // Further calls return an error
-            assert_eq!(
-                s.encrypt_chunk(&data, false).unwrap_err().kind(),
-                io::ErrorKind::WriteZero
-            );
-            assert_eq!(
-                s.encrypt_chunk(&data, true).unwrap_err().kind(),
-                io::ErrorKind::WriteZero
-            );
-
-            res
-        };
-
-        let decrypted = {
-            let mut s = Stream::new(&key);
-            let res = s.decrypt_chunk(&encrypted, true).unwrap();
-
-            // Further calls return an error
-            match s.decrypt_chunk(&encrypted, false) {
-                Err(e) => assert_eq!(e.kind(), io::ErrorKind::UnexpectedEof),
-                _ => panic!("Expected error"),
-            }
-            match s.decrypt_chunk(&encrypted, true) {
-                Err(e) => assert_eq!(e.kind(), io::ErrorKind::UnexpectedEof),
-                _ => panic!("Expected error"),
-            }
-
-            res
-        };
-
-        assert_eq!(decrypted.expose_secret(), &data);
-    }
-
-    #[test]
-    fn stream_round_trip_short() {
-        let key = [7; 32];
-        let data = vec![42; 1024];
-
-        let mut encrypted = vec![];
-        {
-            let mut w = Stream::encrypt(&key, &mut encrypted);
-            w.write_all(&data).unwrap();
-            w.finish().unwrap();
-        };
-
-        let decrypted = {
-            let mut buf = vec![];
-            let mut r = Stream::decrypt(&key, &encrypted[..]);
-            r.read_to_end(&mut buf).unwrap();
-            buf
-        };
-
-        assert_eq!(decrypted, data);
-    }
-
-    #[test]
-    fn stream_round_trip_chunk() {
-        let key = [7; 32];
-        let data = vec![42; CHUNK_SIZE];
-
-        let mut encrypted = vec![];
-        {
-            let mut w = Stream::encrypt(&key, &mut encrypted);
-            w.write_all(&data).unwrap();
-            w.finish().unwrap();
-        };
-
-        let decrypted = {
-            let mut buf = vec![];
-            let mut r = Stream::decrypt(&key, &encrypted[..]);
-            r.read_to_end(&mut buf).unwrap();
-            buf
-        };
-
-        assert_eq!(decrypted, data);
-    }
-
-    #[test]
-    fn stream_round_trip_long() {
-        let key = [7; 32];
-        let data = vec![42; 100 * 1024];
-
-        let mut encrypted = vec![];
-        {
-            let mut w = Stream::encrypt(&key, &mut encrypted);
-            w.write_all(&data).unwrap();
-            w.finish().unwrap();
-        };
-
-        let decrypted = {
-            let mut buf = vec![];
-            let mut r = Stream::decrypt(&key, &encrypted[..]);
-            r.read_to_end(&mut buf).unwrap();
-            buf
-        };
-
-        assert_eq!(decrypted, data);
-    }
-
-    #[test]
-    fn stream_fails_to_decrypt_truncated_file() {
-        let key = [7; 32];
-        let data = vec![42; 2 * CHUNK_SIZE];
-
-        let mut encrypted = vec![];
-        {
-            let mut w = Stream::encrypt(&key, &mut encrypted);
-            w.write_all(&data).unwrap();
-            // Forget to call w.finish()!
-        };
-
-        let mut buf = vec![];
-        let mut r = Stream::decrypt(&key, &encrypted[..]);
-        assert_eq!(
-            r.read_to_end(&mut buf).unwrap_err().kind(),
-            io::ErrorKind::UnexpectedEof
-        );
-    }
-
-    #[test]
-    fn stream_seeking() {
-        let key = [7; 32];
-        let mut data = vec![0; 100 * 1024];
-        for (i, b) in data.iter_mut().enumerate() {
-            *b = i as u8;
-        }
-
-        let mut encrypted = vec![];
-        {
-            let mut w = Stream::encrypt(&key, &mut encrypted);
-            w.write_all(&data).unwrap();
-            w.finish().unwrap();
-        };
-
-        let mut r = Stream::decrypt(&key, Cursor::new(encrypted));
-
-        // Read through into the second chunk
-        let mut buf = vec![0; 100];
-        for i in 0..700 {
-            r.read_exact(&mut buf).unwrap();
-            assert_eq!(&buf[..], &data[100 * i..100 * (i + 1)]);
-        }
-
-        // Seek back into the first chunk
-        r.seek(SeekFrom::Start(250)).unwrap();
-        r.read_exact(&mut buf).unwrap();
-        assert_eq!(&buf[..], &data[250..350]);
-
-        // Seek forwards within this chunk
-        r.seek(SeekFrom::Current(510)).unwrap();
-        r.read_exact(&mut buf).unwrap();
-        assert_eq!(&buf[..], &data[860..960]);
-
-        // Seek backwards from the end
-        r.seek(SeekFrom::End(-1337)).unwrap();
-        r.read_exact(&mut buf).unwrap();
-        assert_eq!(&buf[..], &data[data.len() - 1337..data.len() - 1237]);
     }
 }

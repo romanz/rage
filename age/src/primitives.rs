@@ -1,9 +1,6 @@
 //! Primitive cryptographic operations used by `age`.
 
-use hmac::{
-    crypto_mac::{generic_array::typenum::U32, MacError, MacResult},
-    Hmac, Mac,
-};
+use hmac::{crypto_mac::MacError, Hmac, Mac};
 use scrypt::{errors::InvalidParams, scrypt as scrypt_inner, ScryptParams};
 use sha2::Sha256;
 use std::io::{self, Write};
@@ -26,11 +23,6 @@ impl HmacWriter {
         HmacWriter {
             inner: Hmac::new_varkey(&key).expect("key is the correct length"),
         }
-    }
-
-    /// Checks if `mac` is correct for the processed input.
-    pub(crate) fn result(self) -> MacResult<U32> {
-        self.inner.result()
     }
 
     /// Checks if `mac` is correct for the processed input.

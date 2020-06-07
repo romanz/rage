@@ -1,10 +1,6 @@
 //! The age file format.
 
-use rand::{
-    distributions::{Distribution, Uniform},
-    thread_rng, RngCore,
-};
-use std::io::{self, Read, Write};
+use std::io::{self, Read};
 
 use crate::primitives::HmacWriter;
 
@@ -64,62 +60,12 @@ impl From<plugin::RecipientStanza> for RecipientStanza {
     }
 }
 
-/// Creates a random recipient stanza that exercises the joint in the age v1 format.
-pub(crate) fn oil_the_joint() -> RecipientStanza {
-    // Generate arbitrary strings between 1 and 9 characters long.
-    fn gen_arbitrary_string<R: RngCore>(rng: &mut R) -> String {
-        let length = Uniform::from(1..9).sample(rng);
-        Uniform::from(33..=126)
-            .sample_iter(rng)
-            .map(char::from)
-            .take(length)
-            .collect()
-    }
-
-    let mut rng = thread_rng();
-
-    // Add a prefix to the random tag so users know what is going on.
-    let tag = format!("joint-oil-{}", gen_arbitrary_string(&mut rng));
-
-    // Between this and the above generation bounds, the first line of the recipient
-    // stanza will be between five and 69 characters.
-    let args = (0..Uniform::from(0..5).sample(&mut rng))
-        .map(|_| gen_arbitrary_string(&mut rng))
-        .collect();
-
-    // A length between 0 and 100 bytes exercises the following stanza bodies:
-    // - Empty
-    // - Single short-line
-    // - Single full-line
-    // - Two lines, second short
-    // - Two lines, both full
-    // - Three lines, last short
-    let mut body = vec![0; Uniform::from(0..100).sample(&mut rng)];
-    rng.fill_bytes(&mut body);
-
-    plugin::RecipientStanza { tag, args, body }.into()
-}
-
 pub struct HeaderV1 {
     pub(crate) recipients: Vec<RecipientStanza>,
     pub(crate) mac: [u8; 32],
 }
 
 impl HeaderV1 {
-    fn new(recipients: Vec<RecipientStanza>, mac_key: [u8; 32]) -> Self {
-        let mut header = HeaderV1 {
-            recipients,
-            mac: [0; 32],
-        };
-
-        let mut mac = HmacWriter::new(mac_key);
-        cookie_factory::gen(write::header_v1_minus_mac(&header), &mut mac)
-            .expect("can serialize Header into HmacWriter");
-        header.mac.copy_from_slice(mac.result().code().as_slice());
-
-        header
-    }
-
     pub(crate) fn verify_mac(&self, mac_key: [u8; 32]) -> Result<(), hmac::crypto_mac::MacError> {
         let mut mac = HmacWriter::new(mac_key);
         cookie_factory::gen(write::header_v1_minus_mac(self), &mut mac)
@@ -129,10 +75,6 @@ impl HeaderV1 {
 }
 
 impl Header {
-    pub(crate) fn new(recipients: Vec<RecipientStanza>, mac_key: [u8; 32]) -> Self {
-        Header::V1(HeaderV1::new(recipients, mac_key))
-    }
-
     pub(crate) fn read<R: Read>(mut input: R) -> io::Result<Self> {
         let mut data = vec![];
         loop {
@@ -172,17 +114,6 @@ impl Header {
                 }
             }
         }
-    }
-
-    pub(crate) fn write<W: Write>(&self, mut output: W) -> io::Result<()> {
-        cookie_factory::gen(write::header(self), &mut output)
-            .map(|_| ())
-            .map_err(|e| {
-                io::Error::new(
-                    io::ErrorKind::Other,
-                    format!("failed to write header: {}", e),
-                )
-            })
     }
 }
 
@@ -279,7 +210,6 @@ mod write {
     use std::io::Write;
 
     use super::*;
-    use crate::util::write::encoded_data;
 
     fn recipient_stanza<'a, W: 'a + Write>(r: &'a RecipientStanza) -> impl SerializeFn<W> + 'a {
         move |w: WriteContext<W>| {
@@ -309,56 +239,5 @@ mod write {
             string("\n"),
             slice(MAC_TAG),
         ))
-    }
-
-    fn header_v1<'a, W: 'a + Write>(h: &'a HeaderV1) -> impl SerializeFn<W> + 'a {
-        tuple((
-            header_v1_minus_mac(h),
-            string(" "),
-            encoded_data(&h.mac),
-            string("\n"),
-        ))
-    }
-
-    pub(super) fn header<'a, W: 'a + Write>(h: &'a Header) -> impl SerializeFn<W> + 'a {
-        move |w: WriteContext<W>| match h {
-            Header::V1(v1) => header_v1(v1)(w),
-            Header::Unknown(version) => tuple((slice(AGE_MAGIC), slice(version), string("\n")))(w),
-        }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::Header;
-
-    #[test]
-    fn parse_header() {
-        let test_header = "age-encryption.org/v1
--> X25519 CJM36AHmTbdHSuOQL+NESqyVQE75f2e610iRdLPEN20
-C3ZAeY64NXS4QFrksLm3EGz+uPRyI0eQsWw7LWbbYig
--> X25519 ytazqsbmUnPwVWMVx0c1X9iUtGdY4yAB08UQTY2hNCI
-N3pgrXkbIn/RrVt0T0G3sQr1wGWuclqKxTSWHSqGdkc
--> scrypt bBjlhJVYZeE4aqUdmtRHfw 15
-ZV/AhotwSGqaPCU43cepl4WYUouAa17a3xpu4G2yi5k
--> ssh-rsa mhir0Q
-xD7o4VEOu1t7KZQ1gDgq2FPzBEeSRqbnqvQEXdLRYy143BxR6oFxsUUJCRB0ErXA
-mgmZq7tIm5ZyY89OmqZztOgG2tEB1TZvX3Q8oXESBuFjBBQkKaMLkaqh5GjcGRrZ
-e5MmTXRdEyNPRl8qpystNZR1q2rEDUHSEJInVLW8OtvQRG8P303VpjnOUU53FSBw
-yXxDtzxKxeloceFubn/HWGcR0mHU+1e9l39myQEUZjIoqFIELXvh9o6RUgYzaAI+
-m/uPLMQdlIkiOOdbsrE6tFesRLZNHAYspeRKI9MJ++Xg9i7rutU34ZM+1BL6KgZf
-J9FSm+GFHiVWpr1MfYCo/w
--> ssh-ed25519 BjH7FA RO+wV4kbbl4NtSmp56lQcfRdRp3dEFpdQmWkaoiw6lY
-51eEu5Oo2JYAG7OU4oamH03FDRP18/GnzeCrY7Z+sa8
--> some-empty-body-recipient BjH7FA 37 mhir0Q
--> some-other-recipient mhir0Q BjH7FA 37
-m/uPLMQdlIkiOOdbsrE6tFesRLZNHAYspeRKI9MJ++Xg9i7rutU34ZM+1BL6KgZf
-J9FSm+GFHiVWpr1MfYCo/w
---- fgMiVLJHMlg9fW7CVG/hPS5EAU4Zeg19LyCP7SoH5nA
-";
-        let h = Header::read(test_header.as_bytes()).unwrap();
-        let mut data = vec![];
-        h.write(&mut data).unwrap();
-        assert_eq!(std::str::from_utf8(&data), Ok(test_header));
     }
 }
