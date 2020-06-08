@@ -72,13 +72,6 @@ impl From<hmac::crypto_mac::MacError> for Error {
     }
 }
 
-#[cfg(feature = "unstable")]
-impl From<rsa::errors::Error> for Error {
-    fn from(_: rsa::errors::Error) -> Self {
-        Error::DecryptionFailed
-    }
-}
-
 impl std::error::Error for Error {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
