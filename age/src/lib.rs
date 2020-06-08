@@ -106,13 +106,3 @@ mod util;
 
 pub use error::Error;
 pub use protocol::Decryptor;
-
-/// Helper for fuzzing the Header parser and serializer.
-#[cfg(fuzzing)]
-pub fn fuzz_header(data: &[u8]) {
-    if let Ok(header) = format::Header::read(data) {
-        let mut buf = Vec::with_capacity(data.len());
-        header.write(&mut buf).expect("can write header");
-        assert_eq!(&buf[..], &data[..buf.len()]);
-    }
-}
