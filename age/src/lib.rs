@@ -107,7 +107,6 @@ mod protocol;
 mod util;
 
 pub use error::Error;
-pub use primitives::stream;
 pub use protocol::{decryptor, Decryptor};
 
 /// Helper for fuzzing the Header parser and serializer.

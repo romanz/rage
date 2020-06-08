@@ -4,8 +4,6 @@ use hmac::{crypto_mac::MacError, Hmac, Mac};
 use sha2::Sha256;
 use std::io::{self, Write};
 
-pub mod stream;
-
 /// `HMAC[key](message)`
 ///
 /// HMAC from [RFC 2104] with SHA-256.

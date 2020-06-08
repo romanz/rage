@@ -7,7 +7,6 @@ use crate::{
     error::Error,
     format::{Header, RecipientStanza},
     keys::FileKey,
-    primitives::stream::{Stream, StreamReader},
 };
 
 #[cfg(feature = "async")]
@@ -62,11 +61,11 @@ impl<R: AsyncRead + Unpin> PassphraseDecryptor<R> {
         mut self,
         _passphrase: &SecretString,
         _max_work_factor: Option<u8>,
-    ) -> Result<StreamReader<R>, Error> {
+    ) -> Result<R, Error> {
         self.0
             .obtain_payload_key(|r| {
                 panic!("RecipientStanza: {:?}", r);
             })
-            .map(|payload_key| Stream::decrypt_async(&payload_key, self.0.input))
+            .map(|_payload_key| self.0.input)
     }
 }

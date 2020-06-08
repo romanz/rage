@@ -1,7 +1,7 @@
-use age_core::{format::AgeStanza};
+use age_core::format::AgeStanza;
 use std::convert::TryInto;
 
-use crate::{util::read::base64_arg};
+use crate::util::read::base64_arg;
 
 pub(super) const SCRYPT_RECIPIENT_TAG: &str = "scrypt";
 
