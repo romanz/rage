@@ -2,52 +2,23 @@
 
 use secrecy::SecretString;
 
-use crate::{
-    error::Error,
-    format::{Header, RecipientStanza},
-    keys::FileKey,
-};
+use crate::{error::Error, format::Header};
 
 #[cfg(feature = "async")]
 use futures::io::AsyncRead;
 
-struct BaseDecryptor<R> {
+/// Decryptor for an age file encrypted with a passphrase.
+pub struct PassphraseDecryptor<R> {
     /// The age file.
     input: R,
     /// The age file's header.
     header: Header,
-    /// The age file's AEAD nonce
-    nonce: [u8; 16],
 }
-
-impl<R> BaseDecryptor<R> {
-    fn obtain_payload_key<F>(&mut self, filter: F) -> Result<(), Error>
-    where
-        F: FnMut(&RecipientStanza) -> Option<Result<FileKey, Error>>,
-    {
-        match &self.header {
-            Header::V1(header) => header
-                .recipients
-                .iter()
-                .find_map(filter)
-                .unwrap_or(Err(Error::NoMatchingKeys))
-                .map(|_file_key| ()),
-            Header::Unknown(_) => unreachable!(),
-        }
-    }
-}
-
-/// Decryptor for an age file encrypted with a passphrase.
-pub struct PassphraseDecryptor<R>(BaseDecryptor<R>);
 
 #[cfg(feature = "async")]
 impl<R: AsyncRead + Unpin> PassphraseDecryptor<R> {
-    pub(super) fn new_async(input: R, header: Header, nonce: [u8; 16]) -> Self {
-        PassphraseDecryptor(BaseDecryptor {
-            input,
-            header,
-            nonce,
-        })
+    pub(super) fn new_async(input: R, header: Header, _nonce: [u8; 16]) -> Self {
+        PassphraseDecryptor { input, header }
     }
 
     /// Attempts to decrypt the age file.
@@ -57,14 +28,20 @@ impl<R: AsyncRead + Unpin> PassphraseDecryptor<R> {
     ///
     /// If successful, returns a reader that will provide the plaintext.
     pub fn decrypt_async(
-        mut self,
+        self,
         _passphrase: &SecretString,
         _max_work_factor: Option<u8>,
     ) -> Result<R, Error> {
-        self.0
-            .obtain_payload_key(|r| {
-                panic!("RecipientStanza: {:?}", r);
-            })
-            .map(|_payload_key| self.0.input)
+        match &self.header {
+            Header::V1(header) => header
+                .recipients
+                .iter()
+                .find_map(|r| {
+                    panic!("RecipientStanza: {:?}", r);
+                })
+                .unwrap_or(Err(Error::NoMatchingKeys))
+                .map(|()| self.input),
+            Header::Unknown(_) => unreachable!(),
+        }
     }
 }

@@ -101,7 +101,6 @@
 
 mod error;
 mod format;
-mod keys;
 mod protocol;
 mod util;
 
