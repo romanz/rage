@@ -1,33 +1,14 @@
 //! Encryption and decryption routines for age.
 
-use age_core::primitives::hkdf;
-use secrecy::ExposeSecret;
-
 use crate::{
     error::Error,
-    format::{Header, HeaderV1, RecipientStanza},
-    keys::FileKey,
+    format::{Header, RecipientStanza},
 };
 
 #[cfg(feature = "async")]
 use futures::io::{AsyncRead, AsyncReadExt};
 
 pub mod decryptor;
-
-const HEADER_KEY_LABEL: &[u8] = b"header";
-const PAYLOAD_KEY_LABEL: &[u8] = b"payload";
-
-fn v1_payload_key(
-    header: &HeaderV1,
-    file_key: FileKey,
-    nonce: [u8; 16],
-) -> Result<[u8; 32], Error> {
-    // Verify the MAC
-    header.verify_mac(hkdf(&[], HEADER_KEY_LABEL, file_key.0.expose_secret()))?;
-
-    // Return the payload key
-    Ok(hkdf(&nonce, PAYLOAD_KEY_LABEL, file_key.0.expose_secret()))
-}
 
 /// Decryptor for an age file.
 pub enum Decryptor<R> {

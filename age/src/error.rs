@@ -60,12 +60,6 @@ impl From<io::Error> for Error {
     }
 }
 
-impl From<hmac::crypto_mac::MacError> for Error {
-    fn from(_: hmac::crypto_mac::MacError) -> Self {
-        Error::InvalidMac
-    }
-}
-
 impl std::error::Error for Error {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {

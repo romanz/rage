@@ -2,7 +2,6 @@
 
 use secrecy::SecretString;
 
-use super::v1_payload_key;
 use crate::{
     error::Error,
     format::{Header, RecipientStanza},
@@ -22,7 +21,7 @@ struct BaseDecryptor<R> {
 }
 
 impl<R> BaseDecryptor<R> {
-    fn obtain_payload_key<F>(&mut self, filter: F) -> Result<[u8; 32], Error>
+    fn obtain_payload_key<F>(&mut self, filter: F) -> Result<(), Error>
     where
         F: FnMut(&RecipientStanza) -> Option<Result<FileKey, Error>>,
     {
@@ -32,7 +31,7 @@ impl<R> BaseDecryptor<R> {
                 .iter()
                 .find_map(filter)
                 .unwrap_or(Err(Error::NoMatchingKeys))
-                .and_then(|file_key| v1_payload_key(header, file_key, self.nonce)),
+                .map(|_file_key| ()),
             Header::Unknown(_) => unreachable!(),
         }
     }

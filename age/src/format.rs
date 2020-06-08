@@ -2,8 +2,6 @@
 
 use std::io;
 
-use crate::primitives::HmacWriter;
-
 #[cfg(feature = "async")]
 use futures::io::{AsyncRead, AsyncReadExt};
 
@@ -29,15 +27,6 @@ impl From<scrypt::RecipientStanza> for RecipientStanza {
 pub struct HeaderV1 {
     pub(crate) recipients: Vec<RecipientStanza>,
     pub(crate) mac: [u8; 32],
-}
-
-impl HeaderV1 {
-    pub(crate) fn verify_mac(&self, mac_key: [u8; 32]) -> Result<(), hmac::crypto_mac::MacError> {
-        let mut mac = HmacWriter::new(mac_key);
-        cookie_factory::gen(write::header_v1_minus_mac(self), &mut mac)
-            .expect("can serialize Header into HmacWriter");
-        mac.verify(&self.mac)
-    }
 }
 
 impl Header {
@@ -130,43 +119,5 @@ mod read {
                 }),
             )),
         )(input)
-    }
-}
-
-mod write {
-    use cookie_factory::{
-        combinator::{slice, string},
-        multi::separated_list,
-        sequence::tuple,
-        SerializeFn, WriteContext,
-    };
-    use std::io::Write;
-
-    use super::*;
-
-    fn recipient_stanza<'a, W: 'a + Write>(r: &'a RecipientStanza) -> impl SerializeFn<W> + 'a {
-        move |w: WriteContext<W>| {
-            let out = slice(RECIPIENT_TAG)(w)?;
-            match r {
-                RecipientStanza::Scrypt(r) => scrypt::write::recipient_stanza(r)(out),
-                RecipientStanza::Plugin => Ok(out),
-            }
-        }
-    }
-
-    pub(super) fn header_v1_minus_mac<'a, W: 'a + Write>(
-        h: &'a HeaderV1,
-    ) -> impl SerializeFn<W> + 'a {
-        tuple((
-            slice(AGE_MAGIC),
-            slice(V1_MAGIC),
-            string("\n"),
-            separated_list(
-                string("\n"),
-                h.recipients.iter().map(move |r| recipient_stanza(r)),
-            ),
-            string("\n"),
-            slice(MAC_TAG),
-        ))
     }
 }

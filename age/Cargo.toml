@@ -20,12 +20,6 @@ age-core = { version = "0.4.0", path = "../age-core" }
 # - Base64 from RFC 4648
 base64 = "0.11"
 
-# - HKDF from RFC 5869 with SHA-256
-# - HMAC from RFC 2104 with SHA-256
-hkdf = "0.8"
-hmac = "0.7"
-sha2 = "0.8"
-
 # - CSPRNG
 rand = "0.7"
 
