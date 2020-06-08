@@ -8,18 +8,12 @@ use crate::{
 #[cfg(feature = "async")]
 use futures::io::{AsyncRead, AsyncReadExt};
 
-pub mod decryptor;
-
 /// Decryptor for an age file.
-pub enum Decryptor<R> {
-    /// Decryption with a passphrase.
-    Passphrase(decryptor::PassphraseDecryptor<R>),
-}
-
-impl<R> From<decryptor::PassphraseDecryptor<R>> for Decryptor<R> {
-    fn from(decryptor: decryptor::PassphraseDecryptor<R>) -> Self {
-        Decryptor::Passphrase(decryptor)
-    }
+pub struct Decryptor<R> {
+    /// The age file.
+    input: R,
+    /// The age file's header.
+    header: Header,
 }
 
 #[cfg(feature = "async")]
@@ -45,12 +39,32 @@ impl<R: AsyncRead + Unpin> Decryptor<R> {
                 });
 
                 if any_scrypt && v1_header.recipients.len() == 1 {
-                    Ok(decryptor::PassphraseDecryptor::new_async(input, header, nonce).into())
+                    Ok(Decryptor { input, header })
                 } else {
                     Err(Error::InvalidHeader)
                 }
             }
             Header::Unknown(_) => Err(Error::UnknownFormat),
+        }
+    }
+
+    /// Attempts to decrypt the age file.
+    ///
+    /// `max_work_factor` is the maximum accepted work factor. If `None`, the default
+    /// maximum is adjusted to around 16 seconds of work.
+    ///
+    /// If successful, returns a reader that will provide the plaintext.
+    pub fn decrypt_async(self) -> Result<R, Error> {
+        match &self.header {
+            Header::V1(header) => header
+                .recipients
+                .iter()
+                .find_map(|r| {
+                    panic!("RecipientStanza: {:?}", r);
+                })
+                .unwrap_or(Err(Error::NoMatchingKeys))
+                .map(|()| self.input),
+            Header::Unknown(_) => unreachable!(),
         }
     }
 }
