@@ -1,7 +1,6 @@
 //! Primitive cryptographic operations used by `age`.
 
 use hmac::{crypto_mac::MacError, Hmac, Mac};
-use scrypt::{errors::InvalidParams, scrypt as scrypt_inner, ScryptParams};
 use sha2::Sha256;
 use std::io::{self, Write};
 
@@ -39,18 +38,4 @@ impl Write for HmacWriter {
     fn flush(&mut self) -> io::Result<()> {
         Ok(())
     }
-}
-
-/// `scrypt[salt, N](password)`
-///
-/// scrypt from [RFC 7914] with r = 8 and P = 1. N must be a power of 2.
-///
-/// [RFC 7914]: https://tools.ietf.org/html/rfc7914
-pub(crate) fn scrypt(salt: &[u8], log_n: u8, password: &str) -> Result<[u8; 32], InvalidParams> {
-    let params = ScryptParams::new(log_n, 8, 1)?;
-
-    let mut output = [0; 32];
-    scrypt_inner(password.as_bytes(), salt, &params, &mut output)
-        .expect("output is the correct length");
-    Ok(output)
 }

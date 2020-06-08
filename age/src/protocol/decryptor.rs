@@ -60,16 +60,12 @@ impl<R: AsyncRead + Unpin> PassphraseDecryptor<R> {
     /// If successful, returns a reader that will provide the plaintext.
     pub fn decrypt_async(
         mut self,
-        passphrase: &SecretString,
-        max_work_factor: Option<u8>,
+        _passphrase: &SecretString,
+        _max_work_factor: Option<u8>,
     ) -> Result<StreamReader<R>, Error> {
         self.0
             .obtain_payload_key(|r| {
-                if let RecipientStanza::Scrypt(s) = r {
-                    s.unwrap_file_key(passphrase, max_work_factor).transpose()
-                } else {
-                    None
-                }
+                panic!("RecipientStanza: {:?}", r);
             })
             .map(|payload_key| Stream::decrypt_async(&payload_key, self.0.input))
     }
