@@ -24,6 +24,7 @@ impl From<scrypt::RecipientStanza> for RecipientStanza {
     }
 }
 
+#[derive(Debug)]
 pub struct HeaderV1 {
     pub(crate) recipients: Vec<RecipientStanza>,
     pub(crate) mac: [u8; 32],
@@ -52,6 +53,7 @@ impl Header {
     }
 }
 
+#[derive(Debug)]
 pub(crate) enum Header {
     V1(HeaderV1),
     Unknown(String),

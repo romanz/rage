@@ -55,16 +55,6 @@ impl<R: AsyncRead + Unpin> Decryptor<R> {
     ///
     /// If successful, returns a reader that will provide the plaintext.
     pub fn decrypt_async(self) -> Result<R, Error> {
-        match &self.header {
-            Header::V1(header) => header
-                .recipients
-                .iter()
-                .find_map(|r| {
-                    panic!("RecipientStanza: {:?}", r);
-                })
-                .unwrap_or(Err(Error::NoMatchingKeys))
-                .map(|()| self.input),
-            Header::Unknown(_) => unreachable!(),
-        }
+        panic!("Header: {:?}", self.header);
     }
 }
