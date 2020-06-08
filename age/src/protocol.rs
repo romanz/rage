@@ -10,10 +10,10 @@ use futures::io::{AsyncRead, AsyncReadExt};
 
 /// Decryptor for an age file.
 pub struct Decryptor<R> {
-    /// The age file.
-    input: R,
     /// The age file's header.
     header: Header,
+    /// The age file.
+    input: R,
 }
 
 #[cfg(feature = "async")]
