@@ -1,7 +1,6 @@
 //! Decryptors for age.
 
 use secrecy::SecretString;
-use std::io::Read;
 
 use super::v1_payload_key;
 use crate::{
@@ -42,38 +41,6 @@ impl<R> BaseDecryptor<R> {
 
 /// Decryptor for an age file encrypted with a passphrase.
 pub struct PassphraseDecryptor<R>(BaseDecryptor<R>);
-
-impl<R: Read> PassphraseDecryptor<R> {
-    pub(super) fn new(input: R, header: Header, nonce: [u8; 16]) -> Self {
-        PassphraseDecryptor(BaseDecryptor {
-            input,
-            header,
-            nonce,
-        })
-    }
-
-    /// Attempts to decrypt the age file.
-    ///
-    /// `max_work_factor` is the maximum accepted work factor. If `None`, the default
-    /// maximum is adjusted to around 16 seconds of work.
-    ///
-    /// If successful, returns a reader that will provide the plaintext.
-    pub fn decrypt(
-        mut self,
-        passphrase: &SecretString,
-        max_work_factor: Option<u8>,
-    ) -> Result<StreamReader<R>, Error> {
-        self.0
-            .obtain_payload_key(|r| {
-                if let RecipientStanza::Scrypt(s) = r {
-                    s.unwrap_file_key(passphrase, max_work_factor).transpose()
-                } else {
-                    None
-                }
-            })
-            .map(|payload_key| Stream::decrypt(&payload_key, self.0.input))
-    }
-}
 
 #[cfg(feature = "async")]
 impl<R: AsyncRead + Unpin> PassphraseDecryptor<R> {

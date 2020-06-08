@@ -90,25 +90,6 @@ impl Stream {
     /// random nonce.
     ///
     /// [`HKDF`]: age_core::primitives::hkdf
-    pub(crate) fn decrypt<R: Read>(key: &[u8; 32], inner: R) -> StreamReader<R> {
-        StreamReader {
-            stream: Self::new(key),
-            inner,
-            encrypted_chunk: vec![0; ENCRYPTED_CHUNK_SIZE],
-            encrypted_pos: 0,
-            start: StartPos::Implicit(0),
-            cur_plaintext_pos: 0,
-            chunk: None,
-        }
-    }
-
-    /// Wraps `STREAM` decryption under the given `key` around a reader.
-    ///
-    /// `key` must **never** be repeated across multiple streams. In `age` this is
-    /// achieved by deriving the key with [`HKDF`] from both a random file key and a
-    /// random nonce.
-    ///
-    /// [`HKDF`]: age_core::primitives::hkdf
     #[cfg(feature = "async")]
     pub(crate) fn decrypt_async<R: AsyncRead>(key: &[u8; 32], inner: R) -> StreamReader<R> {
         StreamReader {

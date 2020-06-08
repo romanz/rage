@@ -58,5 +58,5 @@ quickcheck = "0.9"
 quickcheck_macros = "0.9"
 
 [features]
-default = []
+default = ["async"]
 async = ["futures"]

@@ -1,6 +1,6 @@
 //! The age file format.
 
-use std::io::{self, Read};
+use std::io;
 
 use crate::primitives::HmacWriter;
 
@@ -41,26 +41,6 @@ impl HeaderV1 {
 }
 
 impl Header {
-    pub(crate) fn read<R: Read>(mut input: R) -> io::Result<Self> {
-        let mut data = vec![];
-        loop {
-            match read::header(&data) {
-                Ok((_, header)) => break Ok(header),
-                Err(nom::Err::Incomplete(nom::Needed::Size(n))) => {
-                    // Read the needed additional bytes. We need to be careful how the
-                    // parser is constructed, because if we read more than we need, the
-                    // remainder of the input will be truncated.
-                    let m = data.len();
-                    data.resize(m + n, 0);
-                    input.read_exact(&mut data[m..m + n])?;
-                }
-                Err(_) => {
-                    break Err(io::Error::new(io::ErrorKind::InvalidData, "invalid header"));
-                }
-            }
-        }
-    }
-
     #[cfg(feature = "async")]
     pub(crate) async fn read_async<R: AsyncRead + Unpin>(mut input: R) -> io::Result<Self> {
         let mut data = vec![];
