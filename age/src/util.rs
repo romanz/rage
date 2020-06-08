@@ -1,8 +1,3 @@
-#[cfg(windows)]
-pub(crate) const LINE_ENDING: &str = "\r\n";
-#[cfg(not(windows))]
-pub(crate) const LINE_ENDING: &str = "\n";
-
 pub(crate) mod read {
     pub(crate) fn base64_arg<A: AsRef<[u8]>, B: AsMut<[u8]>>(arg: &A, mut buf: B) -> Option<B> {
         if arg.as_ref().len() != ((4 * buf.as_mut().len()) + 2) / 3 {

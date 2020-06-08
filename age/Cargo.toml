@@ -40,9 +40,6 @@ rand = "0.7"
 cookie-factory = "0.3.1"
 nom = "5"
 
-# Armor writing
-radix64 = "0.6"
-
 # Secret management
 secrecy = "0.6"
 subtle = "2"
