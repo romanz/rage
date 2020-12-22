@@ -51,12 +51,7 @@ where
                 io::ErrorKind::NotFound => file_not_found(filename),
                 _ => e.into(),
             })?;
-        identities.extend(
-            identity_file
-                .into_identities()
-                .into_iter()
-                .map(|i| Box::new(i) as Box<dyn Identity>),
-        );
+        identities.extend(identity_file.into_identities().into_iter());
     }
 
     Ok(identities)

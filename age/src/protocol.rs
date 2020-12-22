@@ -336,12 +336,7 @@ mod tests {
         let buf = BufReader::new(crate::x25519::tests::TEST_SK.as_bytes());
         let f = IdentityFile::from_buffer(buf).unwrap();
         let pk: x25519::Recipient = crate::x25519::tests::TEST_PK.parse().unwrap();
-        recipient_round_trip(
-            vec![Box::new(pk)],
-            f.into_identities()
-                .into_iter()
-                .map(|sk| Box::new(sk) as Box<dyn Identity>),
-        );
+        recipient_round_trip(vec![Box::new(pk)], f.into_identities().into_iter());
     }
 
     #[cfg(feature = "async")]

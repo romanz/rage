@@ -13,6 +13,10 @@ use std::fmt;
 use x25519_dalek::{EphemeralSecret, PublicKey, StaticSecret};
 use zeroize::Zeroize;
 
+use subprocess::{Exec, Redirection};
+
+use std::str::FromStr;
+
 use crate::{
     error::{DecryptError, EncryptError},
     util::{parse_bech32, read::base64_arg},
@@ -98,13 +102,93 @@ impl crate::Identity for Identity {
         // matches a particular stanza.
 
         let pk: PublicKey = (&self.0).into();
-        let shared_secret = self.0.diffie_hellman(&epk);
+        let shared_secret = self.0.diffie_hellman(&epk).to_bytes();
+        let mut salt = vec![];
+        salt.extend_from_slice(epk.as_bytes());
+        salt.extend_from_slice(pk.as_bytes());
+
+        let enc_key = hkdf(&salt, X25519_RECIPIENT_KEY_LABEL, &shared_secret);
+
+        aead_decrypt(&enc_key, &encrypted_file_key)
+            .ok()
+            .map(|mut pt| {
+                // It's ours!
+                let file_key: [u8; 16] = pt[..].try_into().unwrap();
+                pt.zeroize();
+                Ok(file_key.into())
+            })
+    }
+}
+
+/// TREZOR SLIP-0017 identity.
+#[derive(Clone)]
+pub struct ExternalIdentity(String);
+
+impl ExternalIdentity {
+    fn to_public(&self) -> Recipient {
+        let pubkey_str = Exec::cmd("trezor-age")
+            .arg("pubkey")
+            .arg("--identity")
+            .arg(&self.0)
+            .stdout(Redirection::Pipe)
+            .capture()
+            .expect("pubkey failed")
+            .stdout_str();
+        Recipient::from_str(&pubkey_str.trim()).expect(&format!("bad pubkey: {}", pubkey_str))
+    }
+
+    fn external_ecdh(&self, peer: Recipient) -> Vec<u8> {
+        Exec::cmd("trezor-age")
+            .arg("decrypt")
+            .arg("--identity")
+            .arg(&self.0)
+            .arg(peer.to_string())
+            .stdout(Redirection::Pipe)
+            .capture()
+            .expect("ECDH failed")
+            .stdout
+    }
+}
+
+const PREFIX_SLIP_0017: &str = "## SLIP-0017: ";
+
+impl std::str::FromStr for ExternalIdentity {
+    type Err = &'static str;
+
+    /// Parses a SLIP-0017 identity from a string.
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        if s.starts_with(PREFIX_SLIP_0017) {
+            Ok(ExternalIdentity(s[PREFIX_SLIP_0017.len()..].to_owned()))
+        } else {
+            Err("not SLIP-0017 identity")
+        }
+    }
+}
+
+impl crate::Identity for ExternalIdentity {
+    fn unwrap_stanza(&self, stanza: &Stanza) -> Option<Result<FileKey, DecryptError>> {
+        if stanza.tag != X25519_RECIPIENT_TAG {
+            return None;
+        }
+        if stanza.body.len() != ENCRYPTED_FILE_KEY_BYTES {
+            return Some(Err(DecryptError::InvalidHeader));
+        }
+
+        let epk: PublicKey = base64_arg(stanza.args.get(0)?, [0; EPK_LEN_BYTES])?.into();
+        let encrypted_file_key: [u8; ENCRYPTED_FILE_KEY_BYTES] = stanza.body[..].try_into().ok()?;
+
+        // A failure to decrypt is non-fatal (we try to decrypt the recipient
+        // stanza with other X25519 keys), because we cannot tell which key
+        // matches a particular stanza.
+
+        let pk: PublicKey = self.to_public().0;
+        let shared_secret = self.external_ecdh(Recipient(epk.into()));
 
         let mut salt = vec![];
         salt.extend_from_slice(epk.as_bytes());
         salt.extend_from_slice(pk.as_bytes());
 
-        let enc_key = hkdf(&salt, X25519_RECIPIENT_KEY_LABEL, shared_secret.as_bytes());
+        let enc_key = hkdf(&salt, X25519_RECIPIENT_KEY_LABEL, &shared_secret);
 
         aead_decrypt(&enc_key, &encrypted_file_key)
             .ok()

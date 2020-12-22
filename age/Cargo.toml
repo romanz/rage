@@ -80,6 +80,8 @@ console = { version = "0.13", optional = true }
 pinentry = { version = "0.2", optional = true }
 rpassword = { version = "5", optional = true }
 
+subprocess = "0.2.6"
+
 [dev-dependencies]
 criterion = "0.3"
 criterion-cycles-per-byte = "0.1"

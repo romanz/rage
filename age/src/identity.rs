@@ -1,11 +1,11 @@
 use std::fs::File;
 use std::io;
 
-use crate::x25519;
+use crate::{x25519, Identity};
 
 /// A list of identities that has been parsed from some input file.
 pub struct IdentityFile {
-    identities: Vec<x25519::Identity>,
+    identities: Vec<Box<dyn Identity>>,
 }
 
 impl IdentityFile {
@@ -18,15 +18,18 @@ impl IdentityFile {
 
     /// Parses one or more identities from a buffered input containing valid UTF-8.
     pub fn from_buffer<R: io::BufRead>(data: R) -> io::Result<Self> {
-        let mut identities = vec![];
+        let mut identities: Vec<Box<dyn Identity>> = vec![];
         for line in data.lines() {
             let line = line?;
             if line.is_empty() || line.starts_with('#') {
+                if let Ok(identity) = line.parse::<x25519::ExternalIdentity>() {
+                    identities.push(Box::new(identity));
+                }
                 continue;
             }
 
             if let Ok(identity) = line.parse::<x25519::Identity>() {
-                identities.push(identity);
+                identities.push(Box::new(identity));
             } else {
                 return Err(io::Error::new(
                     io::ErrorKind::InvalidData,
@@ -38,7 +41,7 @@ impl IdentityFile {
     }
 
     /// Returns the identities in this file.
-    pub fn into_identities(self) -> Vec<x25519::Identity> {
+    pub fn into_identities(self) -> Vec<Box<dyn Identity>> {
         self.identities
     }
 }
