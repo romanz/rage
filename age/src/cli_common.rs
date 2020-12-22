@@ -11,7 +11,7 @@ use std::fs::File;
 use std::io::{self, BufReader};
 use subtle::ConstantTimeEq;
 
-use crate::{fl, identity::IdentityFile, Callbacks, Identity};
+use crate::{fl, identity::IdentityFile, x25519::ExternalIdentity, Callbacks, Identity};
 
 #[cfg(feature = "plugin")]
 use crate::plugin;
@@ -38,6 +38,12 @@ where
     let mut plugin_identities: Vec<plugin::Identity> = vec![];
 
     for filename in filenames {
+        // Try to parse as an external SLIP-0017 identity
+        if let Some(identity) = ExternalIdentity::new(&std::fs::read_to_string(&filename)?) {
+            identities.push(Box::new(identity) as Box<dyn Identity>);
+            continue;
+        }
+
         // Try parsing as a single multi-line SSH identity.
         #[cfg(feature = "ssh")]
         match crate::ssh::Identity::from_buffer(

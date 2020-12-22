@@ -13,10 +13,14 @@ use std::fmt;
 use x25519_dalek::{EphemeralSecret, PublicKey, StaticSecret};
 use zeroize::Zeroize;
 
+use subprocess::{Exec, Redirection};
+
 use crate::{
     error::{DecryptError, EncryptError},
     util::{parse_bech32, read::base64_arg},
 };
+
+use std::str::FromStr;
 
 // Use lower-case HRP to avoid https://github.com/rust-bitcoin/rust-bech32/issues/40
 const SECRET_KEY_PREFIX: &str = "age-secret-key-";
@@ -146,6 +150,78 @@ impl std::str::FromStr for Recipient {
     }
 }
 
+/// TREZOR SLIP-0017 identity.
+#[derive(Clone)]
+pub struct ExternalIdentity(String, PublicKey);
+
+impl ExternalIdentity {
+    /// Wrap SLIP-0017 identity
+    pub fn new(s: &str) -> Option<Self> {
+        if !s.contains("\nage1") {
+            return None;
+        }
+        let parts: Vec<&str> = s.splitn(2, '\n').collect();
+        let identity = parts[0].trim();
+        let recipient = parts[1].trim();
+        let pubkey = Recipient::from_str(recipient)
+            .expect("invalid public key")
+            .0;
+
+        Some(Self(identity.to_owned(), pubkey))
+    }
+
+    fn pubkey(&self) -> &PublicKey {
+        &self.1
+    }
+
+    fn external_ecdh(&self, peer: Recipient) -> Vec<u8> {
+        Exec::cmd("trezor-age")
+            .arg("decrypt")
+            .arg("--identity")
+            .arg(&self.0)
+            .arg(peer.to_string())
+            .stdout(Redirection::Pipe)
+            .capture()
+            .expect("ECDH failed")
+            .stdout
+    }
+}
+
+impl crate::Identity for ExternalIdentity {
+    fn unwrap_stanza(&self, stanza: &Stanza) -> Option<Result<FileKey, DecryptError>> {
+        if stanza.tag != X25519_RECIPIENT_TAG {
+            return None;
+        }
+        if stanza.body.len() != ENCRYPTED_FILE_KEY_BYTES {
+            return Some(Err(DecryptError::InvalidHeader));
+        }
+
+        let epk: PublicKey = base64_arg(stanza.args.get(0)?, [0; EPK_LEN_BYTES])?.into();
+        let encrypted_file_key: [u8; ENCRYPTED_FILE_KEY_BYTES] = stanza.body[..].try_into().ok()?;
+
+        // A failure to decrypt is non-fatal (we try to decrypt the recipient
+        // stanza with other X25519 keys), because we cannot tell which key
+        // matches a particular stanza.
+
+        let shared_secret = self.external_ecdh(Recipient(epk.into()));
+
+        let mut salt = vec![];
+        salt.extend_from_slice(epk.as_bytes());
+        salt.extend_from_slice(self.pubkey().as_bytes());
+
+        let enc_key = hkdf(&salt, X25519_RECIPIENT_KEY_LABEL, &shared_secret);
+
+        aead_decrypt(&enc_key, FILE_KEY_BYTES, &encrypted_file_key)
+            .ok()
+            .map(|mut pt| {
+                // It's ours!
+                let file_key: [u8; FILE_KEY_BYTES] = pt[..].try_into().unwrap();
+                pt.zeroize();
+                Ok(file_key.into())
+            })
+    }
+}
+
 impl fmt::Display for Recipient {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
@@ -229,5 +305,36 @@ pub(crate) mod tests {
             Some(Ok(res)) => TestResult::from_bool(res.expose_secret() == file_key.expose_secret()),
             _ => TestResult::from_bool(false),
         }
+    }
+
+    #[test]
+    fn external_identity() {
+        use crate::x25519::ExternalIdentity;
+        assert!(ExternalIdentity::new("foo").is_none());
+        assert!(ExternalIdentity::new("foo\n").is_none());
+        assert_eq!(
+            ExternalIdentity::new(
+                "foo\nage1rfm5g0kcu79s76yx0k7m4gcheqvmqw3juuw62u0g0h4zz0jeqcxqchmnta"
+            )
+            .unwrap()
+            .0,
+            "foo"
+        );
+        assert_eq!(
+            ExternalIdentity::new(
+                "foo\nage1rfm5g0kcu79s76yx0k7m4gcheqvmqw3juuw62u0g0h4zz0jeqcxqchmnta\n"
+            )
+            .unwrap()
+            .0,
+            "foo"
+        );
+        assert_eq!(
+            ExternalIdentity::new(
+                " foo bar \nage1rfm5g0kcu79s76yx0k7m4gcheqvmqw3juuw62u0g0h4zz0jeqcxqchmnta"
+            )
+            .unwrap()
+            .0,
+            "foo bar"
+        );
     }
 }
