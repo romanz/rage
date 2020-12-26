@@ -7,6 +7,16 @@ and this project adheres to Rust's notion of
 to 1.0.0 are beta releases.
 
 ## [Unreleased]
+### Added
+- `age_core::format::FILE_KEY_BYTES` constant.
+
+### Security
+- `age_core::primitives::aead_decrypt` now takes a `size` argument, checked
+  against the plaintext length. This is to mitigate multi-key attacks, where a
+  ciphertext can be crafted that decrypts successfully under multiple keys.
+  Short ciphertexts can only target two keys, which has limited impact. See
+  [this commit message](https://github.com/FiloSottile/age/commit/2194f6962c8bb3bca8a55f313d5b9302596b593b)
+  for more details.
 
 ## [0.5.0] - 2020-11-22
 ### Added

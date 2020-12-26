@@ -4,17 +4,20 @@ use rand::{
 };
 use secrecy::{ExposeSecret, Secret};
 
-/// A file key for encrypting or decrypting an age file.
-pub struct FileKey(Secret<[u8; 16]>);
+/// The length of an age file key.
+pub const FILE_KEY_BYTES: usize = 16;
 
-impl From<[u8; 16]> for FileKey {
-    fn from(file_key: [u8; 16]) -> Self {
+/// A file key for encrypting or decrypting an age file.
+pub struct FileKey(Secret<[u8; FILE_KEY_BYTES]>);
+
+impl From<[u8; FILE_KEY_BYTES]> for FileKey {
+    fn from(file_key: [u8; FILE_KEY_BYTES]) -> Self {
         FileKey(Secret::new(file_key))
     }
 }
 
-impl ExposeSecret<[u8; 16]> for FileKey {
-    fn expose_secret(&self) -> &[u8; 16] {
+impl ExposeSecret<[u8; FILE_KEY_BYTES]> for FileKey {
+    fn expose_secret(&self) -> &[u8; FILE_KEY_BYTES] {
         self.0.expose_secret()
     }
 }
