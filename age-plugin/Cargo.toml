@@ -16,6 +16,7 @@ secrecy = "0.7"
 
 [dev-dependencies]
 gumdrop = "0.8"
+subprocess = "0.2"
 
 [lib]
 bench = false

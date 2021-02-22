@@ -10,6 +10,17 @@ use secrecy::ExposeSecret;
 use std::collections::HashMap;
 use std::convert::TryInto;
 use std::io;
+use std::io::Write;
+
+fn debug(s: String) {
+    let mut opts = std::fs::OpenOptions::new();
+    let mut f = opts
+        .write(true)
+        .append(true)
+        .open("/tmp/debug.log")
+        .unwrap();
+    writeln!(&mut f, "{}", s).unwrap();
+}
 
 const PLUGIN_NAME: &str = "trezor";
 const RECIPIENT_TAG: &str = PLUGIN_NAME;
@@ -24,6 +35,7 @@ impl RecipientPluginV1 for RecipientPlugin {
         let errors = recipients
             .enumerate()
             .filter_map(|(index, recipient)| {
+                debug(format!("RecipientPluginV1::add_recipients: {}", recipient));
                 if recipient.contains(PLUGIN_NAME) {
                     // A real plugin would store the recipient here.
                     None
@@ -49,6 +61,7 @@ impl RecipientPluginV1 for RecipientPlugin {
         let errors = identities
             .enumerate()
             .filter_map(|(index, identity)| {
+                debug(format!("RecipientPluginV1::add_identities: {}", identity));
                 if identity.contains(&PLUGIN_NAME.to_uppercase()) {
                     // A real plugin would store the identity.
                     None
@@ -99,6 +112,7 @@ impl IdentityPluginV1 for IdentityPlugin {
         let errors = identities
             .enumerate()
             .filter_map(|(index, identity)| {
+                debug(format!("IdentityPluginV1::add_identities: {}", identity));
                 if identity.contains(&PLUGIN_NAME.to_uppercase()) {
                     // A real plugin would store the identity.
                     None
@@ -147,16 +161,20 @@ struct PluginOptions {
 
     #[options(help = "run the given age plugin state machine", no_short)]
     age_plugin: Option<String>,
+
+    #[options(help = "SLIP-0017 identity")]
+    identity: Option<String>,
 }
 
 fn main() -> io::Result<()> {
     let opts = PluginOptions::parse_args_default_or_exit();
 
     if let Some(state_machine) = opts.age_plugin {
-        run_state_machine(&state_machine, || RecipientPlugin, || IdentityPlugin)
-    } else {
-        // A real plugin would generate a new identity here.
-        print_new_identity(PLUGIN_NAME, &[], &[]);
-        Ok(())
+        return run_state_machine(&state_machine, || RecipientPlugin, || IdentityPlugin);
     }
+    if let Some(id) = opts.identity {
+        // A real plugin would generate a new identity here.
+        print_new_identity(PLUGIN_NAME, id.as_bytes(), id.as_bytes());
+    }
+    Ok(())
 }
